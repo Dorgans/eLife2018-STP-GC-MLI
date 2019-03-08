@@ -9,7 +9,7 @@ def load_WCPWave__():
     r = io.WinWcpIO(filename=directory)
     block = r.read_block()
     for i in range(len(block.segments)):
-        RAW.append(block.segments[0].analogsignals[0])
+        RAW.append(block.segments[i].analogsignals[0])
     sampling__ = float(block.segments[0].analogsignals[0].sampling_rate)
     return RAW, 1000/sampling__
 
@@ -51,7 +51,7 @@ def Simple_eEPSC_Train_Analysis():
         peak_occurence = []
         EXTRACTED_CURRENT = []
         event_latency__ = []
-        
+
         ___anal_freq = 10
         ___delay = 500
         ___window = 8.3
@@ -59,7 +59,7 @@ def Simple_eEPSC_Train_Analysis():
         ___number_of_pulses = 10
 
         RAW_WCP, sampling = load_WCPWave__()
-        
+
         signal_name = __TIMESTART__
         print(str("ANALYZING "+str(signal_name)))
         print("----------------------------")
@@ -69,11 +69,11 @@ def Simple_eEPSC_Train_Analysis():
         #This will estimate noise sd and charge related to time window
         EXTRACTED_CURRENT.append(RAW_SIGNAL[0:int(___window/sampling)])
         OFFSET = np.median(EXTRACTED_CURRENT)
-        RAW_SIGNAL = RAW_SIGNAL - OFFSET        
+        RAW_SIGNAL = RAW_SIGNAL - OFFSET
         sdNOISE = np.std(np.concatenate(EXTRACTED_CURRENT, axis=0))
         chNOISE = abs(np.trapz(np.subtract(EXTRACTED_CURRENT, OFFSET))*sampling)
 
-        #This estimates linear fit if current offset @eEPSC(n+1) is huge 
+        #This estimates linear fit if current offset @eEPSC(n+1) is huge
         for j in range(___number_of_pulses):
             EXTRACTED_CURRENT = []
             __RAW___ = RAW_SIGNAL[int((___delay + ___current_delay +(___anal_freq*j))/sampling):int((___delay + ___current_delay + ___window +(___anal_freq*j))/sampling)]
@@ -115,10 +115,10 @@ def Simple_eEPSC_Train_Analysis():
             else:
                 OFFSET_CHARGE = 0
                 preciseOFFSET = 0
-                
+
             current_value = abs(np.min(EXTRACTED_CURRENT))-abs(3*sdNOISE)
             charge_value = np.trapz(EXTRACTED_CURRENT)*sampling
-            
+
             __RAW___ = RAW_SIGNAL[int((___delay + ___current_delay +(___anal_freq*j))/sampling):int((___delay +___window+(___anal_freq*j))/sampling)]
 
             peak_occurence.append(int(__RAW___.tolist().index(np.min(__RAW___)))*sampling)
@@ -163,12 +163,12 @@ def Simple_eEPSC_Train_Analysis():
         for i in range(___number_of_pulses):
             if CORRECTED_AMP_VALUES[i] != 0:
                 ax.scatter(___delay+___current_delay+peak_occurence[i]+i*___anal_freq, (0-CORRECTED_AMP_VALUES[i]), marker='o', color='orange', alpha=0.7)
-                ax.plot(np.linspace((___delay+ ___current_delay+___anal_freq*i),(___delay+ ___current_delay+ ___anal_freq*i+len(FULL_EPSC_TRAIN_[i])*sampling), len(FULL_EPSC_TRAIN_[i])), FULL_EPSC_TRAIN_[i], c='black', alpha=0.8)
+                ax.plot(np.linspace((___delay+ ___current_delay+___anal_freq*i), (___delay+ ___current_delay+ ___anal_freq*i+len(FULL_EPSC_TRAIN_[i])*sampling), len(FULL_EPSC_TRAIN_[i])), FULL_EPSC_TRAIN_[i], c='black', alpha=0.8)
 
 
         ax.scatter(np.linspace(___delay, ___delay+___anal_freq*9, ___number_of_pulses), np.linspace(0, 0, ___number_of_pulses), color='black', s=100, alpha=0.9, marker='|')
         ax.set_xlim(___delay-20, ___delay+___anal_freq*9+20)
-        ax.set_ylim(10,-np.max(CORRECTED_AMP_VALUES)*1.5)
+        ax.set_ylim(10, -np.max(CORRECTED_AMP_VALUES)*1.5)
         sns.despine(left=False, right=True, top=True, bottom=False)
         plt.xlabel("RAW TRACE")
         plt.tight_layout()
@@ -178,8 +178,47 @@ def Simple_eEPSC_Train_Analysis():
     DATA_f.to_csv(str(signal_name)+' Amplitude_temp_.csv', header=None, sep=' ')
     DATA_f2 = pd.DataFrame(data=CORRECTED_CHARGE_VALUES)
     DATA_f2.to_csv(str(signal_name)+' Charge_temp_.csv', header=None, sep=' ')
-    
+
     print("__ANALYSIS SUCCEDED__")
     print("TIME : "+str(time.time()-__TIMESTART__)+" Sec.")
 
     return
+
+def eEPSC1_Failure_Detection(RAW, sampling, TAGGED_SWEEPS, THRESHOLD=3):
+    import numpy as np
+    from matplotlib import pyplot as plt
+
+    FAILURES = 0
+    ___delay = 500
+    ___window = 8.3
+    ___current_delay = 1.1
+
+    NOISE_THRESHOLD = []
+    OFFSET = []
+
+    for i in TAGGED_SWEEPS:
+        EXTRACTED_BASELINE = []
+        SWEEP = np.concatenate(RAW[i])
+        for j in range(10):
+            temp__NOISE_THRESHOLD = []
+            temp__OFFSET = []
+    
+            EXTRACTED_BASELINE.append(SWEEP[int(___window/sampling)*j:int(___window/sampling)*j + int(___window/sampling)])
+            temp__OFFSET.append(np.nanmedian(EXTRACTED_BASELINE))
+            temp__NOISE_THRESHOLD.append(THRESHOLD * np.std(EXTRACTED_BASELINE))
+        OFFSET.append(np.nanmedian(temp__OFFSET))
+        NOISE_THRESHOLD.append(-np.nanmedian(temp__NOISE_THRESHOLD))
+
+    for i in range(len(TAGGED_SWEEPS)):
+        SWEEP = np.concatenate(RAW[TAGGED_SWEEPS[i]])
+        EXTRACTED_eEPSC = SWEEP[int((___delay+___current_delay)/sampling):int((___delay+___window+___current_delay)/sampling)]
+        EXTRACTED_eEPSC = EXTRACTED_eEPSC - OFFSET[i]
+
+
+        if np.nanmin(EXTRACTED_eEPSC) > np.nanmedian(NOISE_THRESHOLD):
+            FAILURES += 1
+            plt.plot(EXTRACTED_eEPSC, color='red')
+        else:
+            plt.plot(EXTRACTED_eEPSC, color='black')
+
+    return FAILURES/len(TAGGED_SWEEPS)
